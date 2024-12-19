@@ -22,16 +22,18 @@
    com.sun.jna.Structure)
   (:gen-class))
 
+(set! *warn-on-reflection* true)
+
 (raw/import-structs!)
 
-(def cleaner (Cleaner/create))
+(def ^Cleaner cleaner (Cleaner/create))
 
 (defonce handles (atom #{}))
 (defn ref! [o]
   (swap! handles conj o)
   o)
 
-(defn ->avrational [num den]
+(defn ->avrational ^AVRational [num den]
   (doto (AVRational.)
     (.writeField "num" (int num))
     (.writeField "den" (int den))))
@@ -40,13 +42,13 @@
 (defn error->str [err]
   (let [buf (byte-array 255)]
     (av_strerror err buf (alength buf))
-    (let [s (String. buf 0 (transduce
-                            (take-while #(not (zero? %)))
-                            (completing
-                             (fn [cnt _]
-                               (inc cnt)))
-                            0
-                            buf))]
+    (let [s (String. buf 0 (long (transduce
+                                   (take-while #(not (zero? %)))
+                                   (completing
+                                     (fn [cnt _]
+                                       (inc cnt)))
+                                   0
+                                   buf)))]
       s)))
 
 
@@ -60,7 +62,7 @@
 
 
 
-(defn next-packet [ctx]
+(defn next-packet [^AVFormatContext ctx]
   (let [packet (av_packet_alloc)
         ptr (Pointer/nativeValue (.getPointer packet))]
     (.register cleaner packet
@@ -307,7 +309,8 @@
                     result)]
        result))))
 
-(defn open-context [fname]
+(defn open-context
+  ^AVFormatContext [fname]
   (let [format-ctx (avformat_alloc_context)
         _ (when (nil? format-ctx)
             (throw (ex-info "Error allocating format context."
