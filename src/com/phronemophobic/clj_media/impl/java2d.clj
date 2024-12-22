@@ -20,6 +20,8 @@
            java.awt.Color
            java.awt.RenderingHints))
 
+(set! *warn-on-reflection* true)
+
 (raw/import-structs!)
 
 (defn play-video [fname]
@@ -41,6 +43,7 @@
         repaint (::java2d/repaint window-info)
         start-time (System/currentTimeMillis)
 
+        ^AVRational
         time-base (.readField decoder-context "time_base")
         num (.readField time-base "num")
         den (.readField time-base "den")
@@ -54,6 +57,7 @@
     (try
       (loop [t 0]
         (let [start-frame-time (System/currentTimeMillis)
+              ^AVFrame
               frame (loop []
                       (let [packet (av/next-packet input-context)]
                         (when packet
@@ -112,21 +116,28 @@
        (java2d/draw elem))
      img)))
 
-(defn raster-data [img]
+(defn raster-data [^java.awt.image.BufferedImage img]
   (let [raster (.getData img)
         buffer (.getDataBuffer raster)
-        buf (.getData buffer)]
+        buf (cond
+              (instance? java.awt.image.DataBufferByte buffer) (.getData ^java.awt.image.DataBufferByte buffer)
+              (instance? java.awt.image.DataBufferDouble buffer) (.getData ^java.awt.image.DataBufferDouble buffer)
+              (instance? java.awt.image.DataBufferFloat buffer) (.getData ^java.awt.image.DataBufferFloat buffer)
+              (instance? java.awt.image.DataBufferInt buffer) (.getData ^java.awt.image.DataBufferInt buffer)
+              (instance? java.awt.image.DataBufferShort buffer) (.getData ^java.awt.image.DataBufferShort buffer)
+              (instance? java.awt.image.DataBufferUShort buffer) (.getData ^java.awt.image.DataBufferUShort buffer)
+              :else (throw (ex-info (str "Unknown class: " (class buffer)) {})))]
     buf))
 
-(defn img->frame [img]
+(defn img->frame [^java.awt.image.BufferedImage img]
   (let [w (.getWidth img)
         h (.getHeight img)
         pix-fmt AV_PIX_FMT_RGB24
-        frame (doto (av_frame_alloc)
-                (.writeField "width" w)
-                (.writeField "height" h)
-                (.writeField "format" pix-fmt))
-
+        ^AVFrame frame (av_frame_alloc)
+        _ (doto frame
+            (.writeField "width" w)
+            (.writeField "height" h)
+            (.writeField "format" pix-fmt))
         err av_frame_get_buffer]
     (assert (zero? (av_frame_get_buffer frame 0)))
     (assert (zero? (av_frame_make_writable frame)))
