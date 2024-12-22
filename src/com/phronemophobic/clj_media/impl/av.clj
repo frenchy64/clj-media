@@ -63,7 +63,7 @@
 
 
 (defn next-packet [^AVFormatContext ctx]
-  (let [packet (av_packet_alloc)
+  (let [^AVPacket packet (av_packet_alloc)
         ptr (Pointer/nativeValue (.getPointer packet))]
     (.register cleaner packet
                (fn []
@@ -96,10 +96,10 @@
   (nativeType [_]
     Pointer)
   (toNative [_]
-    (.toNative frame)))
+    (com.sun.jna.NativeMapped/.toNative frame)))
 
-(defn new-frame []
-  (let [frame (av_frame_alloc)
+(defn new-frame ^AVFrame []
+  (let [^AVFrame frame (av_frame_alloc)
         ptr (Pointer/nativeValue (.getPointer frame))]
     (.register cleaner frame
                (fn []
@@ -113,7 +113,7 @@
     frame))
 
 (defn new-packet[]
-  (let [packet (av_packet_alloc)
+  (let [^AVPacket packet (av_packet_alloc)
         ptr (Pointer/nativeValue (.getPointer packet))]
     (.register cleaner packet
                (fn []
@@ -132,7 +132,7 @@
   (fn
     ([] (rf))
     ([result] (rf result))
-    ([result format-context]
+    ([result ^Structure format-context]
      (loop [result result]
        (let [packet (new-packet)
              err (av_read_frame (.getPointer format-context) packet)
@@ -317,7 +317,7 @@
                             {:filename fname})))
 
         format-ctx* (doto (PointerByReference.)
-                      (.setValue (.getPointer format-ctx)))
+                      (.setValue (Structure/.getPointer format-ctx)))
         _ (.register cleaner format-ctx
                      (fn []
                        (avformat_free_context (.getValue format-ctx*))))
@@ -357,7 +357,7 @@
     AVMEDIA_TYPE_AUDIO (audio-codec-context-format codec-context)
     AVMEDIA_TYPE_VIDEO (video-codec-context-format codec-context)))
 
-(defn add-stream [output-format-context encoder-context]
+(defn add-stream [output-format-context ^AVCodecContext encoder-context]
   (let [output-format (:oformat output-format-context)
         output-format+ (Structure/newInstance AVOutputFormatByReference
                                               output-format)
@@ -392,13 +392,14 @@
           (throw (Exception. "Could not initialize stream params")))
         stream))
 
-(defn video-encoder-context [format]
+(defn video-encoder-context ^AVCodecContext [format]
   (let [codec-id (-> format :codec :id)
 
         output-codec (avcodec_find_encoder codec-id)
         _ (when (nil? output-codec)
             (throw (Exception. "could not find encoder")))
 
+        ^AVCodecContext
         encoder-context (avcodec_alloc_context3 output-codec)
         _ (when (nil? encoder-context)
             (throw (Exception. "Could not create encoder")))
@@ -440,12 +441,13 @@
               (.writeField "bit_rate" bit-rate)))]
     encoder-context))
 
-(defn audio-encoder-context [format]
+(defn audio-encoder-context ^AVCodecContext [format]
   (let [codec-id (-> format :codec :id)
         output-codec (avcodec_find_encoder codec-id)
         _ (when (nil? output-codec)
             (throw (Exception. "could not find encoder")))
 
+        ^AVCodecContext
         encoder-context (avcodec_alloc_context3 output-codec)
         _ (when (nil? encoder-context)
             (throw (Exception. "Could not create encoder")))
@@ -454,11 +456,12 @@
 
         sample-fmt (:sample-format format)
         sample-rate (:sample-rate format)
+        ^AVChannelLayout
         ch-layout (:ch-layout format)
 
         _ (assert
            (zero? (av_channel_layout_copy
-                   (.getPointer (:ch_layout encoder-context))
+                   (AVChannelLayout/.getPointer (:ch_layout encoder-context))
                    (.getPointer ch-layout))))
 
         _ (doto encoder-context
@@ -470,12 +473,12 @@
 
     encoder-context))
 
-(defn encoder-context [format]
+(defn encoder-context ^AVCodecContext [format]
   (case (:media-type format)
     :media-type/video (video-encoder-context format)
     :media-type/audio (audio-encoder-context format)))
 
-(defn find-decoder-context [media-type format-context]
+(defn find-decoder-context ^AVCodecContext [media-type ^AVFormatContext format-context]
   (let [err (avformat_find_stream_info format-context nil)
         _ (when (not (zero? err))
             (throw (ex-info "Could not find stream info."
@@ -493,7 +496,7 @@
                             {:error-code best-stream
                              :media-type media-type})))
         num-streams (.readField format-context "nb_streams")
-        streams (.getPointerArray
+        streams (Pointer/.getPointerArray
                  (.readField format-context "streams")
                  0 num-streams)
         stream (aget streams best-stream)
@@ -501,11 +504,13 @@
                                        stream)
 
         codec-parameters (.readField stream+ "codecpar")
-        codec-id (.readField codec-parameters "codec_id" )
+        codec-id (Structure/.readField codec-parameters "codec_id" )
+        ^AVCodec
         decoder (avcodec_find_decoder codec-id)
         _ (when (nil? decoder)
             (throw (ex-info "Could not find decoder"
                             {:codec-id codec-id})))
+        ^AVCodecContext
         decoder-context (avcodec_alloc_context3 (.getPointer decoder))
 
         _ (when (nil? decoder-context)
@@ -596,7 +601,7 @@
             (throw (ex-info "Could not find stream info."
                             {:error-code err})))
         num-streams (:nb_streams format-context)
-        streams (.getPointerArray
+        streams (Pointer/.getPointerArray
                  (.readField format-context "streams")
                  0 num-streams)
 
@@ -630,7 +635,7 @@
     {:streams streams-info}))
 
 
-(defn make-frame [{:keys [bytes
+(defn make-frame [{:keys [^byte/1 bytes
                           format
                           time-base
                           key-frame?
@@ -685,8 +690,8 @@
             (.writeField "sample_rate" sample-rate))
           (assert
            (zero? (raw/av_channel_layout_copy
-                   (.getPointer (:ch_layout frame))
-                   (.getPointer ch-layout))))
+                   (Structure/.getPointer (:ch_layout frame))
+                   (Structure/.getPointer ch-layout))))
           (assert
            (>= (raw/av_frame_get_buffer frame 0)
                0))
@@ -694,13 +699,13 @@
           ;; since linesize is sometimes set for a particular alignment
           ;; I think line size is set by raw/av_frame_get_buffer
           (when (> (alength bytes)
-                   (aget (:linesize frame) 0))
+                   (aget ^ints (:linesize frame) 0))
                 (throw (ex-info "Bytes are the wrong length for sample format."
                                 {:frame m
                                  :bytes bytes
                                  :actual-size (alength bytes)
-                                 :expected-length (aget (:linesize frame) 0)})))
-          (.write (.getPointer (aget (:data frame) 0)) 0 bytes 0 (alength bytes)))
+                                 :expected-length (aget ^ints (:linesize frame) 0)})))
+          (.write (Structure/.getPointer (aget ^objects (:data frame) 0)) 0 bytes 0 (alength bytes)))
 
         :media-type/video
         (let [{:keys [pixel-format
@@ -714,14 +719,14 @@
             (doto frame
               (.writeField "linesize"
                            (doto (int-array 8)
-                             (aset 0 line-size))))
+                             (aset 0 (int line-size)))))
             (throw (ex-info ":line-size must be set when creating video frames."
                             {:frame m})))
           (assert
            (>= (raw/av_frame_get_buffer frame 0)
                0))
 
-          (.write (.getPointer (aget (:data frame) 0)) 0 bytes 0 (alength bytes)))
+          (.write (Structure/.getPointer (aget ^objects (:data frame) 0)) 0 bytes 0 (alength bytes)))
 
         nil (throw (ex-info "frame requires `:media-type` to be set."
                             {:frame m})))
