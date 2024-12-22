@@ -81,7 +81,7 @@
 
   (def format-ctx (avformat_alloc_context))
     (def format-ctx* (doto (PointerByReference.)
-                       (.setValue (.getPointer format-ctx))))
+                       (.setValue (Structure/.getPointer format-ctx))))
 
     (avformat_open_input format-ctx*
                          fname
@@ -217,7 +217,7 @@
                              (:nb_samples frame )
                              (:channels frame ))
                  buf (-> (nth (:data frame ) 0)
-                         AVChannelLayout/.getPointer
+                         Structure/.getPointer
                          (.getByteArray 0 buf-size))]
              
              buf)))))
@@ -225,11 +225,11 @@
 (defn resample2 [input-format output-format]
   (let [resample-ctx* (PointerByReference. Pointer/NULL)
         err (swr_alloc_set_opts2 resample-ctx*
-                                 (AVChannelLayout/.getPointer
+                                 (Structure/.getPointer
                                     (:ch-layout output-format))
                                  (:sample-format output-format)
                                  (:sample-rate output-format)
-                                 (AVChannelLayout/.getPointer
+                                 (Structure/.getPointer
                                   (:ch-layout input-format))
                                  (:sample-format input-format)
                                  (:sample-rate input-format)
@@ -269,8 +269,11 @@
               output-format
               ch-layout (AVChannelLayout.)]
           ;; create out own copy since original copy may change :(
-          (av_channel_layout_copy (.getPointer ch-layout)
-                                  (AVChannelLayout/.getPointer (:ch-layout output-format)))
+          (av_channel_layout_copy (Structure/.getPointer ch-layout)
+                                  (Structure/.getPointer (:ch-layout output-format)))
+          (comment
+            (supers AVChannelLayout)
+            )
           (fn []
             (let [frame
                   (doto (av/new-frame)
@@ -281,8 +284,8 @@
                     (.writeField "sample_rate" sample-rate))]
               (assert
                (zero? (av_channel_layout_copy
-                       (AVChannelLayout/.getPointer (:ch_layout frame))
-                       (.getPointer ch-layout))))
+                       (Structure/.getPointer (:ch_layout frame))
+                       (Structure/.getPointer ch-layout))))
               (assert
                (>= (av_frame_get_buffer frame 0)
                    0))
@@ -315,7 +318,7 @@
                                       (eduction
                                        (map (fn [^AVChannelLayout p]
                                               (when p
-                                                (.share (.getPointer p)
+                                                (.share (Structure/.getPointer p)
                                                         (* sample-offset-multiplier
                                                            current-samples)))))
                                        (:data output-frame)))
@@ -349,7 +352,7 @@
                                         (eduction
                                          (map (fn [p]
                                                 (when p
-                                                  (.share (.getPointer p)
+                                                  (.share (Structure/.getPointer p)
                                                           (* sample-offset-multiplier
                                                              current-samples)))))
                                          (:data output-frame)))
@@ -384,7 +387,7 @@
   (let [buf-size (first (:linesize frame))
         buf (-> (:data frame)
                 (nth 0)
-                (.getPointer)
+                (Structure/.getPointer)
                 (.getByteBuffer 0 buf-size))]
     buf))
 

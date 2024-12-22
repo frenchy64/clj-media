@@ -16,6 +16,7 @@
             [tech.v3.libs.buffered-image :as bufimg]
             )
   (:import com.sun.jna.Pointer
+           com.sun.jna.Structure
            java.awt.Graphics2D
            java.awt.Color
            java.awt.RenderingHints))
@@ -67,7 +68,7 @@
                               (recur))))))]
 
           (when frame
-            (let [best-effort-timestamp (.readField frame "best_effort_timestamp")
+            (let [best-effort-timestamp (long (.readField frame "best_effort_timestamp"))
                   sleep-ms (- (* 1000 fps best-effort-timestamp)
                               (- (System/currentTimeMillis) start-time ))]
               (when (pos? sleep-ms)
@@ -143,13 +144,22 @@
     (assert (zero? (av_frame_make_writable frame)))
     (let [data-ptr (-> (.readField frame "data")
                        first
-                       (.getPointer))
+                       (Structure/.getPointer))
           buf (raster-data img)
           bytes-per-pixel 3
           source-linesize (* bytes-per-pixel w)
           dest-linesize (first (.readField frame "linesize"))]
-      (doseq [y (range h)]
-        (.write data-ptr (* y dest-linesize) buf (* y source-linesize) source-linesize)))
+      (doseq [y (range h)
+              :let [offset (long (* y dest-linesize))
+                    index (long (* y source-linesize))]]
+        (cond
+          (instance? byte/1 buf) (.write data-ptr offset ^byte/1 buf index source-linesize)
+          (instance? char/1 buf) (.write data-ptr offset ^char/1 buf index source-linesize)
+          (instance? double/1 buf) (.write data-ptr offset ^double/1 buf index source-linesize)
+          (instance? float/1 buf) (.write data-ptr offset ^float/1 buf index source-linesize)
+          (instance? int/1 buf) (.write data-ptr offset ^int/1 buf index source-linesize)
+          (instance? long/1 buf) (.write data-ptr offset ^long/1 buf index source-linesize)
+          (instance? short/1 buf) (.write data-ptr offset ^short/1 buf index source-linesize))))
 
     frame))
 
